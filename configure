@@ -102,11 +102,19 @@ echo "BASEDIR = $DIR" >> Makedefs
 # proper handling of Universal Binaries under Mac OS X
 HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
 if test -x /usr/bin/lipo; then
-	ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
-	for ARCH in $ARCHITECTURES; do
-		echo "CFLAGS += -arch ${ARCH}" >> Makedefs
-		echo "LDFLAGS += -arch ${ARCH}" >> Makedefs
-	done
+  if [ `uname` = "Darwin" ]; then
+    for ARCH in "x86_64" "i386"; do
+  		echo "CFLAGS += -arch ${ARCH}" >> Makedefs
+  		echo "LDFLAGS += -arch ${ARCH}" >> Makedefs
+  	done
+  else
+    ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
+    
+    for ARCH in $ARCHITECTURES; do
+  		echo "CFLAGS += -arch ${ARCH}" >> Makedefs
+  		echo "LDFLAGS += -arch ${ARCH}" >> Makedefs
+  	done
+	fi
 fi
 
 if [ -d /usr/share/man ]; then
