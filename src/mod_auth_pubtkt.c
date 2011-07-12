@@ -314,7 +314,7 @@ static int parse_ticket(request_rec *r, char *ticket, auth_pubtkt *tkt) {
 	auth_pubtkt_dir_conf *conf = ap_get_module_config(r->per_dir_config, &auth_pubtkt_module);
 	char *tok, *last;
 	
-	for (tok = apr_strtok(ticket, ";", &last); tok; tok = apr_strtok(NULL, ";", &last)) {
+	for (tok = apr_strtok(ticket, ":", &last); tok; tok = apr_strtok(NULL, ":", &last)) {
 		/* split key/value pair */
 		char *key, *value;
 		char *eqptr = strchr(tok, '=');
@@ -480,7 +480,7 @@ static auth_pubtkt* validate_parse_ticket(request_rec *r, char *ticket) {
 	   the signature on the ticket is valid */
 	
 	/* find the signature */
-	sigptr = strstr(ticket, ";sig=");
+	sigptr = strstr(ticket, ":sig=");
 	
 	if (sigptr == NULL) {
 		ap_log_rerror(APLOG_MARK, APLOG_WARNING, APR_SUCCESS, r, 
