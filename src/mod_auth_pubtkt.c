@@ -326,6 +326,10 @@ static int parse_ticket(request_rec *r, char *ticket, auth_pubtkt *tkt) {
 		
 		*eqptr = 0;
 		key = tok;
+		
+		ap_log_rerror(APLOG_MARK, APLOG_WARNING, APR_SUCCESS, r, 
+			"key: '%s'", tok);
+		
 		value = (eqptr + 1);
 		
 		if (strcmp(key, "uid") == 0)
@@ -577,7 +581,7 @@ static int check_tokens(request_rec *r, auth_pubtkt *tkt) {
 
 	t = apr_pstrdup(r->pool, tkt->tokens); 
   
-	while (*t && (next_parsed_token = ap_getword(r->pool, &t, ','))) {
+	while (*t && (next_parsed_token = ap_getword(r->pool, &t, '-'))) {
 		char** auth_tokens = (char **)conf->auth_token->elts;
 		int i;
 		
@@ -764,12 +768,16 @@ static int auth_pubtkt_check(request_rec *r) {
 
 	dump_config(r);
 
+    fprintf(stderr,"a\n");
 	if (!current_auth || strcasecmp(current_auth, MOD_AUTH_PUBTKT_AUTH_TYPE)) {
 		return DECLINED;
 	}
+    
+    fprintf(stderr,"one\n");
 
 	/* Module misconfigured unless login_url is set */
 	if (!conf->login_url) {
+	    fprintf(stderr,"err0\n");
 		ap_log_rerror(APLOG_MARK, APLOG_ERR, APR_SUCCESS, r,
 		    "TKT: TKTAuthLoginURL missing");
 		return HTTP_INTERNAL_SERVER_ERROR;
@@ -777,6 +785,7 @@ static int auth_pubtkt_check(request_rec *r) {
 	
 	/* Module misconfigured unless public key set */
 	if (!sconf->pubkey) {
+	    fprintf(stderr,"err1\n");
 		ap_log_rerror(APLOG_MARK, APLOG_ERR, APR_SUCCESS, r, 
 			"TKT: TKTAuthPublicKey missing");
 		return HTTP_INTERNAL_SERVER_ERROR;
@@ -784,6 +793,7 @@ static int auth_pubtkt_check(request_rec *r) {
 	
 	/* Redirect/login if scheme not "https" and require_ssl is set */
 	if (conf->require_ssl > 0 && strcmp(scheme, "https") != 0) {
+	    fprintf(stderr,"err2\n");
 		ap_log_rerror(APLOG_MARK, APLOG_WARNING, APR_SUCCESS, r, 
 			"TKT: redirect/login - unsecured request, TKTAuthRequireSSL is on");
 		return redirect(r, conf->login_url);
@@ -792,6 +802,7 @@ static int auth_pubtkt_check(request_rec *r) {
 	/* Check for ticket cookie */
 	ticket = get_cookie_ticket(r);
 	if (ticket == NULL) {
+	    fprintf(stderr,"err3\n");
 		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r, 
 			"TKT: no ticket found - redirecting to login URL");
 		return redirect(r, conf->login_url);
@@ -801,6 +812,7 @@ static int auth_pubtkt_check(request_rec *r) {
 	parsed = validate_parse_ticket(r, ticket);
 	
 	if (parsed == NULL) {
+	    fprintf(stderr,"err4\n");
 		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r, 
 			"TKT: invalid ticket found - redirecting to login URL");
 		return redirect(r, conf->login_url);
@@ -814,7 +826,9 @@ static int auth_pubtkt_check(request_rec *r) {
 		
 		return redirect(r, conf->login_url);
 	}
-
+    
+    fprintf(stderr,"c\n");
+    
 	/* Valid ticket, check timeout - redirect/timed-out if so */
 	if (!check_timeout(r, parsed)) {
 		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r,
@@ -829,16 +843,24 @@ static int auth_pubtkt_check(request_rec *r) {
 		return redirect(r, url);
 	}
 	
+	fprintf(stderr,"d\n");
+	
+	ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r,
+		"TKT: TWO");
+	
 	/* Attempt to refresh cookie if it will expires - redirect on get if so */
 	if ( !check_grace_period(r, parsed) && strcmp(r->method, "GET") == 0 ) {
+	    fprintf(stderr,"fack1\n");
 		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r,
 			"TKT: ticket grace period - redirecting to refresh URL");
 		return redirect(r, (conf->refresh_url ? conf->refresh_url : conf->login_url));
 	}
 
 	/* Check tokens - redirect/unauthorised if so */
-	if (!check_tokens(r, parsed))
+	if (!check_tokens(r, parsed)) {
+	     fprintf(stderr,"fack2\n");
 		return redirect(r, conf->unauth_url ? conf->unauth_url : conf->login_url);
+	}
 
 	/* Setup apache user, auth_type, and environment variables */
 #ifdef APACHE13
