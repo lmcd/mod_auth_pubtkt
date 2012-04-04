@@ -8,6 +8,7 @@
 	
 	See the LICENSE file included in the distribution for the license terms.
 */
+
 #include "mod_auth_pubtkt.h"
 
 /* ----------------------------------------------------------------------- */
@@ -16,6 +17,9 @@ auth_pubtkt_cache	*cache = NULL;
 #if APR_HAS_THREADS
 apr_thread_mutex_t	*cache_lock;
 #endif
+
+memcached_st *memc = NULL;
+static struct memcached_server_st *servers = NULL;
 
 /* ----------------------------------------------------------------------- */
 /* Initializers */
@@ -33,6 +37,8 @@ void auth_pubtkt_child_init(server_rec *s, pool *p) {
 	OpenSSL_add_all_algorithms();
 	
 	cache_init(p, s);
+
+	memcached_init();
 }
 
 #else
@@ -51,6 +57,8 @@ static void auth_pubtkt_child_init(apr_pool_t *p, server_rec *s) {
 	OpenSSL_add_all_algorithms();
 	
 	cache_init(p, s);
+
+	memcached_init();
 }
 #endif
 
@@ -116,6 +124,17 @@ static void *merge_auth_pubtkt_serv_config(apr_pool_t *p, void* parent_dirv, voi
 
 /* ----------------------------------------------------------------------- */
 /* Caching */
+
+static void memcached_init() {
+	memcached_return rc;
+
+	memc = memcached_create(NULL);
+
+	servers = memcached_servers_parse("localhost");
+	rc = memcached_server_push(memc, servers);
+
+	/* todo - need to figure out at which point to free the memcached instance */
+}
 
 static void cache_init(apr_pool_t *p, server_rec* s) {
 	int i;
@@ -438,7 +457,7 @@ static char *get_cookie_ticket(request_rec *r) {
 	apr_table_do(cookie_match, (void*)cr, r->headers_in, "Cookie", NULL);
 	
 	/* Give up if cookie not found or too short */
-	if (!cr->cookie || strlen(cr->cookie) < MIN_AUTH_COOKIE_SIZE)
+	if (!cr->cookie || strlen(cr->cookie) != MIN_AUTH_COOKIE_SIZE)
 		return NULL;
 	
 	return cr->cookie;
@@ -757,6 +776,8 @@ void dump_config(request_rec *r) {
 /* Main ticket authentication */
 static int auth_pubtkt_check(request_rec *r) {
 	char *ticket;
+	char *sessionid;
+
 	auth_pubtkt *parsed;
 	auth_pubtkt_dir_conf *conf = ap_get_module_config(r->per_dir_config,
 									&auth_pubtkt_module);
@@ -793,8 +814,26 @@ static int auth_pubtkt_check(request_rec *r) {
 		return redirect(r, conf->login_url);
 	}
 
-	/* Check for ticket cookie */
-	ticket = get_cookie_ticket(r);
+	/* get session id here from ticket */
+	sessionid = get_cookie_ticket(r);
+
+
+	fprintf(stderr, "Found session ID in cookie: %s\n", sessionid);
+
+	uint32_t flags;
+	size_t val1_len;
+	memcached_return rc;
+
+	ticket = memcached_get(memc, sessionid, MIN_AUTH_COOKIE_SIZE, &val1_len, &flags, &rc);
+
+	if (rc != MEMCACHED_SUCCESS) {
+		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r, 
+			"TKT: could not obtain ticket from memcached");
+		return redirect(r, conf->login_url);
+	}
+
+	fprintf(stderr, "Ticket obtained from memcached: %s\n", ticket);
+
 	if (ticket == NULL) {
 		ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, r, 
 			"TKT: no ticket found - redirecting to login URL");

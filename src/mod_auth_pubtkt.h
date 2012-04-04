@@ -15,6 +15,8 @@
 #include <openssl/err.h>
 #include <openssl/pem.h>
 
+#include <libmemcached/memcached.h>
+
 #include "httpd.h"
 #include "http_config.h"
 #include "http_log.h"
@@ -45,7 +47,7 @@
 #define REMOTE_USER_ENV "REMOTE_USER"
 #define REMOTE_USER_DATA_ENV "REMOTE_USER_DATA"
 #define REMOTE_USER_TOKENS_ENV "REMOTE_USER_TOKENS"
-#define MIN_AUTH_COOKIE_SIZE 64	/* the Base64-encoded signature alone is >= 64 bytes */
+#define MIN_AUTH_COOKIE_SIZE 32	/* the Base64-encoded signature alone is >= 64 bytes */
 #define CACHE_SIZE 200			/* number of entries in ticket cache */
 #define MAX_TICKET_SIZE 1024	/* maximum length of raw ticket */
 
@@ -122,6 +124,7 @@ static void* merge_auth_pubtkt_config(apr_pool_t *p, void* parent_dirv, void* su
 static void *create_auth_pubtkt_serv_config(apr_pool_t *p, server_rec* s);
 static void *merge_auth_pubtkt_serv_config(apr_pool_t *p, void* parent_dirv, void* subdirv);
 
+static void memcached_init();
 static void cache_init(apr_pool_t *p, server_rec* s);
 static int cache_get(const char* ticket, auth_pubtkt *tkt);
 static void cache_put(const char *ticket, auth_pubtkt *tkt);
